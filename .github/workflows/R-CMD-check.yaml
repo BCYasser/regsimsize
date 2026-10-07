@@ -40,6 +40,7 @@ jobs:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
+      - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -54,11 +55,18 @@ jobs:
       - name: Install HTML validator (macOS)
         if: runner.os == 'macOS'
         run: brew list tidy-html5 || brew install tidy-html5
-      - name: Install reference-manual fonts
+      - name: Install reference-manual tools and fonts
         shell: Rscript {0}
         run: |
+          tinytex::tlmgr_update(self = TRUE, all = FALSE)
           tinytex::tlmgr_install(c("inconsolata", "helvetic", "courier", "times",
-                                  "ae", "fancyvrb", "upquote"))
+                                  "ae", "fancyvrb", "upquote", "makeindex"))
+          required_tools <- Sys.which(c("pdflatex", "makeindex", "pandoc"))
+          print(required_tools)
+          if (any(!nzchar(required_tools))) {
+            stop("Missing documentation tools: ",
+                 paste(names(required_tools)[!nzchar(required_tools)], collapse = ", "))
+          }
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: 'c("--as-cran")'
