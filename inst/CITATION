@@ -1,0 +1,8 @@
+citHeader("To cite regsimsize in publications use:")
+bibentry(bibtype = "Manual",
+  title = "regsimsize: Simulation-Based Power and Sample Size for Regression Models",
+  author = person(given = c("Yasser", "C"), family = "Bouklouch"),
+  year = "2026",
+  note = "R package version 0.1.1",
+  textVersion = paste("Bouklouch YC (2026). regsimsize: Simulation-Based Power and Sample Size",
+                      "for Regression Models. R package version 0.1.1."))

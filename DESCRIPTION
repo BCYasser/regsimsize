@@ -1,0 +1,23 @@
+Package: regsimsize
+Type: Package
+Title: Simulation-Based Power and Sample Size for Regression Models
+Version: 0.1.1
+Authors@R: person(given = c("Yasser", "C"), family = "Bouklouch",
+    role = c("aut", "cre"), email = "Yasser.bouklouch@gmail.com")
+Description: Estimate rejection probabilities and select sample sizes by
+    repeatedly generating study data, fitting the planned analysis, and
+    testing a prespecified hypothesis. Provides constructors for generalized
+    linear, linear, and proportional hazards models, and function interfaces
+    for other data generators, model fitters, and tests. Reports Monte Carlo
+    uncertainty, failed analyses, and event summaries. Simulation reporting
+    follows principles discussed by Morris, White, and Crowther (2019)
+    <doi:10.1002/sim.8086>.
+License: MIT + file LICENSE
+Encoding: UTF-8
+URL: https://github.com/BCYasser/regsimsize
+BugReports: https://github.com/BCYasser/regsimsize/issues
+Depends: R (>= 4.1.0)
+Imports: stats, graphics, grDevices, utils, parallel, survival
+Suggests: nlme, knitr
+VignetteBuilder: knitr
+NeedsCompilation: no

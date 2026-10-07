@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning regression studies with regsimsize</title>
+<!--
+%\VignetteIndexEntry{Planning regression studies with regsimsize}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+-->
+<style>
+body { font: 17px/1.65 system-ui, sans-serif; color: #243247;
+       max-width: 900px; margin: 45px auto; padding: 0 24px 70px; }
+h1,h2,h3 { line-height: 1.25; color: #143d61; }
+h1 { font-size: 2.1em; margin-bottom: 10px; }
+h2 { margin-top: 2.2em; border-bottom: 2px solid #d9e5ee; padding-bottom: 9px; }
+a { color: #12628c; } code,pre { font-family: ui-monospace, monospace; }
+pre { background: #f2f6f9; padding: 16px; overflow-x: auto; font-size: 14px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+td,th { text-align: left; vertical-align: top; padding: 10px; border-bottom: 1px solid #d9e5ee; }
+th { background: #edf3f7; } .note { border-left: 4px solid #d7863b;
+padding: 10px 18px; background: #fff8ef; } .meta { color: #536779; }
+@media print { body { max-width: none; font-size: 11pt; margin: 0; }
+pre { white-space: pre-wrap; } h2,h3 { break-after: avoid; } }
+</style>
+</head>
+<body>
+<h1>Planning regression studies with regsimsize</h1>
+<p class="meta">Yasser C Bouklouch | Version 0.1.1 | MIT License</p>
+<p>Build a virtual study, analyze it as planned, and count how often the chosen
+hypothesis is detected. Repeat this at several sample sizes to see how much
+information your study needs.</p>
+<p class="note">The examples below use eight simulations per sample size to run
+quickly. Their numerical results demonstrate the software. They are too imprecise
+to choose a real study's sample size.</p>
+
+<!--begin.rcode setup, include=FALSE
+library(regsimsize)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", error = FALSE)
+end.rcode-->
+
+<h2>1. Specify the study and the question</h2>
+<p>A design combines three things: a data generator, a model fitter, and a test.
+The built-in constructors supply the first two for common models. You choose
+the hypothesis. Sample size means the number passed to the generator, so define
+whether it counts people, clusters, or grouped observations.</p>
+<table>
+<tr><th>Analysis</th><th>Constructor</th><th>What you supply</th></tr>
+<tr><td>Logistic and other GLMs</td><td><code>glm_design()</code></td><td>Formula, coefficients, covariates, family, and test</td></tr>
+<tr><td>Linear regression</td><td><code>lm_design()</code></td><td>The same, plus residual variability</td></tr>
+<tr><td>Right-censored Cox regression</td><td><code>cox_design()</code></td><td>Hazard ratios, baseline hazard, censoring, follow-up, and test</td></tr>
+<tr><td>Other models or study structures</td><td><code>simulation_design()</code></td><td>Data generator, fitting function, and one valid p-value</td></tr>
+</table>
+<p>The package estimates power for a specified hypothesis. A significant
+coefficient alone does not establish that a prediction model has enough data
+for stable development. Prediction planning needs criteria for overfitting,
+calibration, and precision of predictions, as provided by methods such as
+<a href="https://CRAN.R-project.org/package=pmsampsize">pmsampsize</a>.</p>
+
+<h2>2. Logistic regression</h2>
+<p>Here, treatment is balanced on average, age is standardized, and the target
+treatment odds ratio is 1.8. Coefficients are entered on the log-odds scale.</p>
+<!--begin.rcode logistic
+covariates <- function(n) {
+  data.frame(treatment = rbinom(n, 1, 0.5), age_z = rnorm(n))
+}
+logistic <- glm_design(
+  outcome ~ treatment + age_z,
+  coefficients = c("(Intercept)" = -1,
+                   treatment = log(1.8), age_z = log(1.3)),
+  covariates = covariates,
+  test = wald_test("treatment"),
+  family = binomial()
+)
+head(simulate_data(logistic, n = 150, seed = 8))
+logistic_power <- power_curve(logistic, c(150, 300), nsim = 8, seed = 2026)
+summary(logistic_power)
+end.rcode-->
+<p>Use <code>plot(logistic_power)</code> for the power curve and
+<code>plot_event_rate(logistic_power)</code> for the simulated outcome fractions.
+Results include errors and warnings at replicate level.</p>
+<p>The intercept sets risk for the reference participant, not the population
+average. To target an overall event probability of 20%, calibrate over a
+representative covariate sample:</p>
+<!--begin.rcode calibration
+set.seed(16)
+reference <- covariates(3000)
+beta <- c("(Intercept)" = 0, treatment = log(1.8), age_z = log(1.3))
+beta["(Intercept)"] <- calibrate_intercept(
+  outcome ~ treatment + age_z, beta, reference, target = 0.20
+)
+beta
+end.rcode-->
+<p>Pass this adjusted vector to a new <code>glm_design()</code>. Calibration is
+to the empirical reference distribution. Finite studies will vary around that
+event proportion.</p>
+
+<h3>Factors, interactions, and grouped binomial outcomes</h3>
+<p>Coefficient names follow R's model matrix. Set factor levels explicitly and
+use <code>model_coefficients()</code> to avoid guessing names.</p>
+<!--begin.rcode factors
+factor_covariates <- function(n) {
+  data.frame(age_z = rnorm(n),
+    group = factor(sample(c("A", "B", "C"), n, replace = TRUE),
+                   levels = c("A", "B", "C")))
+}
+set.seed(17)
+f <- outcome ~ age_z * group
+beta_factor <- model_coefficients(f, factor_covariates(100))
+beta_factor["(Intercept)"] <- -1
+beta_factor[c("age_z", "groupB", "groupC")] <- c(0.2, log(1.4), log(1.7))
+beta_factor[c("age_z:groupB", "age_z:groupC")] <- c(0.1, -0.1)
+interaction_design <- glm_design(f, beta_factor, factor_covariates,
+  test = wald_test(c("age_z:groupB", "age_z:groupC")))
+
+grouped <- glm_design(outcome ~ treatment + age_z,
+  c("(Intercept)" = -1, treatment = log(1.5), age_z = 0.2),
+  covariates, test = wald_test("treatment"), trials = 5)
+head(simulate_data(grouped, 100, seed = 9)$outcome)
+end.rcode-->
+<p>The grouped response has successes and failures in two columns. Here
+<code>n = 100</code> means 100 covariate rows with 500 total trials. The overall
+event fraction uses the total trials as its denominator. A test of both
+interaction coefficients answers a different question from testing either
+coefficient individually.</p>
+<p>Probit, complementary log-log, and other compatible links can be passed
+through <code>binomial(link = ...)</code>. Poisson, Gaussian, Gamma, and
+inverse-Gaussian families have built-in response generators. Quasi-families
+require an explicit generator because a mean-variance relationship does not
+specify a sampling distribution.</p>
+
+<h2>3. Linear and weighted linear regression</h2>
+<p>Specify the mean outcome through the formula and coefficients. The default
+residual distribution is normal with standard deviation <code>sigma</code>.</p>
+<!--begin.rcode linear
+linear <- lm_design(outcome ~ treatment + age_z,
+  c("(Intercept)" = 0, treatment = 0.5, age_z = 0.2),
+  covariates, test = wald_test("treatment"), sigma = 1)
+linear_power <- power_curve(linear, c(80, 160), nsim = 8, seed = 21)
+print(linear_power)
+
+weighted <- lm_design(outcome ~ treatment + age_z,
+  c("(Intercept)" = 0, treatment = 0.5, age_z = 0.2),
+  covariates, test = wald_test("treatment"),
+  sigma = function(data) sqrt(1 + data$age_z^2),
+  fit_args = function(data) list(weights = 1 / (1 + data$age_z^2)))
+end.rcode-->
+<p>In the weighted example, the generating variance and analysis weights agree.
+They can be varied independently to investigate misspecification. A custom
+<code>error(n, data)</code> callback allows other residual distributions.
+For ordinary linear fits, the built-in coefficient test uses the residual
+degrees of freedom and a t reference distribution.</p>
+
+<h2>4. Cox regression</h2>
+<p>Cox planning needs both recruitment and event assumptions. Coefficients
+are log hazard ratios. Follow-up and baseline hazard must use the same time unit.</p>
+<!--begin.rcode cox
+cox <- cox_design(
+  survival::Surv(time, status) ~ treatment + age_z,
+  coefficients = c(treatment = log(0.65), age_z = log(1.2)),
+  covariates = covariates,
+  test = wald_test("treatment"),
+  baseline = weibull_baseline(rate = 0.12, shape = 1.2),
+  censoring = function(n, data) rexp(n, rate = 0.03),
+  followup = 5
+)
+cox_power <- power_curve(cox, c(150, 300), nsim = 8, seed = 22)
+print(cox_power)
+end.rcode-->
+<p>For this Weibull parameterization, the cumulative baseline hazard is
+<code>rate * time^shape</code>. The generator inverts the cumulative hazard,
+then applies dropout and administrative censoring. Alternatives include
+<code>piecewise_baseline()</code> and a user-defined inverse cumulative hazard.</p>
+<h3>Stratified analysis needs stratified generation</h3>
+<!--begin.rcode stratified
+stratum_covariates <- function(n) {
+  d <- covariates(n)
+  d$site <- factor(sample(c("A", "B"), n, replace = TRUE),
+                   levels = c("A", "B"))
+  d
+}
+stratified <- cox_design(
+  survival::Surv(time, status) ~ treatment + age_z + strata(site),
+  c(treatment = log(0.7), age_z = 0.2), stratum_covariates,
+  test = wald_test("treatment"), lp_formula = ~ treatment + age_z,
+  baseline = weibull_baseline(rate = function(d) ifelse(d$site == "A", 0.1, 0.2)),
+  followup = 5)
+end.rcode-->
+<p>The analysis formula retains the strata; the generating linear predictor
+excludes them because the baseline callback supplies the stratum-specific
+hazards. Frailty, delayed entry, recurrent events, time-varying effects, and
+competing-risk processes require explicit generators and suitable inference.
+Use the general callback interface for those designs.</p>
+
+<h2>5. Connect another model</h2>
+<p>A general design takes functions with signatures
+<code>generate(n)</code>, <code>fit(data)</code>, and <code>test(fit, data)</code>.
+The test must return one p-value, or a list containing <code>p.value</code>.</p>
+<!--begin.rcode callback
+custom <- simulation_design(
+  generate = function(n) {
+    d <- data.frame(x = rnorm(n))
+    d$y <- 0.4 * d$x + rnorm(n)
+    d
+  },
+  fit = function(data) lm(y ~ x, data = data),
+  test = function(fit, data) coef(summary(fit))["x", "Pr(>|t|)"],
+  label = "Custom linear model"
+)
+system.file("examples", "advanced-designs.R", package = "regsimsize")
+end.rcode-->
+<p>The installed advanced examples define time-varying Cox, recurrent-event
+Cox, shared gamma-frailty Cox, and random-intercept linear designs. They show
+how to connect each analysis and define its sampling unit. They do not validate
+every possible use of those models. Penalized fits, boundary tests, and
+post-selection inference require methods appropriate to their targets.</p>
+<p>Use a joint Wald test for a multi-coefficient hypothesis or
+<code>lrt_test(reduced_formula)</code> for a valid nested likelihood comparison.
+The built-in LRT rejects quasi-likelihood and cluster-robust Cox comparisons.
+An ordinary LRT is asymptotic, including for Gaussian linear models; a Wald/F
+test provides the finite-sample alternative under the linear model assumptions.</p>
+
+<h2>6. Interpret power and select a sample size</h2>
+<table>
+<tr><th>Result</th><th>Meaning</th></tr>
+<tr><td><code>power</code></td><td>Valid rejections divided by all attempted analyses</td></tr>
+<tr><td><code>failed</code>, <code>failure_rate</code></td><td>Analyses that could not produce an accepted valid test</td></tr>
+<tr><td><code>power_successful</code></td><td>Power conditional on successful analysis</td></tr>
+<tr><td><code>lower</code>, <code>upper</code></td><td>Pointwise Wilson limits for Monte Carlo uncertainty</td></tr>
+<tr><td><code>mcse</code></td><td>Estimated Monte Carlo standard error</td></tr>
+<tr><td><code>mean_events</code></td><td>Mean generated event count, including datasets whose analyses failed</td></tr>
+</table>
+<p>By default, warnings make an analysis fail. Inspect
+<code>logistic_power$replicates</code> to see messages and stages. The explicit
+option <code>warning_policy = "record"</code> accepts warning-producing
+analyses only when the test is valid and built-in convergence checks pass.
+Review the warnings before choosing this option.</p>
+<p><code>select_sample_size()</code> defaults to the smallest evaluated sample
+size whose lower Monte Carlo confidence limit reaches the target and whose
+observed failure rate is at most 1%. It can return no recommendation. It does
+not extrapolate beyond the supplied grid.</p>
+<pre><code># Run only when ready for a planning calculation:
+curve &lt;- power_curve(logistic, seq(200, 1600, 200),
+                     nsim = 5000, seed = 100)
+candidate &lt;- select_sample_size(curve, target = 0.80)
+if (!is.na(candidate$n)) {
+  confirmation &lt;- power_curve(logistic, candidate$n,
+                              nsim = 10000, seed = 101)
+  print(confirmation)
+}</code></pre>
+<p>These larger runs are shown for real planning and are not executed by this
+guide. Confirm a selected candidate independently. Pointwise intervals do not
+provide a simultaneous guarantee after searching many sample sizes.</p>
+<!--begin.rcode precision
+mc_replicates(half_width = 0.01, power = 0.8)
+end.rcode-->
+<p>More simulations reduce simulation error. They do not resolve uncertainty
+about an assumed treatment effect, recruitment, censoring, or measurement bias.
+Repeat planning across plausible scenarios and check type I error under a null
+scenario using the intended model and test.</p>
+
+<h2>7. Reproduce, export, and report</h2>
+<p>Each replicate receives its own L'Ecuyer-CMRG random-number stream. The caller's
+random-number state is restored. Given the same software, callbacks, seed,
+sample size grid, and replicate count, sequential and parallel runs produce
+the same raw results. Changing the grid or replicate count changes later
+stream assignments. Worker callbacks must have their dependencies available
+and must not reset their own seed.</p>
+<pre><code>parallel_curve &lt;- power_curve(logistic, c(150, 300),
+                              nsim = 8, seed = 2026, workers = 2)
+saveRDS(parallel_curve, "planning-results.rds")
+write.csv(as.data.frame(parallel_curve), "power-summary.csv", row.names = FALSE)</code></pre>
+<p>Report the generating assumptions, sampling unit, model and test, significance
+level, simulation count, seed, failure handling, Monte Carlo uncertainty, and
+selection rule. The installed <code>doc/methods.md</code> explains these choices;
+<code>examples/statistical-validation.R</code> contains optional statistical
+benchmarks. See the repository validation record for the checks performed and their limits.</p>
+<h3>References and software citation</h3>
+<p>Morris TP, White IR, Crowther MJ (2019). Using simulation studies to evaluate
+statistical methods. <em>Statistics in Medicine</em> 38:2074-2102.
+<a href="https://doi.org/10.1002/sim.8086">doi:10.1002/sim.8086</a>.</p>
+<p>Bender R, Augustin T, Blettner M (2005). Generating survival times to simulate
+Cox proportional hazards models. <em>Statistics in Medicine</em> 24:1713-1723.
+<a href="https://doi.org/10.1002/sim.2059">doi:10.1002/sim.2059</a>.</p>
+<!--begin.rcode citation
+citation("regsimsize")
+end.rcode-->
+</body>
+</html>
