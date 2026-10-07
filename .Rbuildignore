@@ -1,0 +1,11 @@
+^CITATION\.cff$
+^LICENSE\.md$
+^SUBMISSION\.md$
+^VALIDATION\.md$
+^cran-comments\.md$
+^\.github$
+^check$
+^cran-check$
+^.*\.Rcheck$
+^regsimsize_.*\.tar\.gz$
+^regsimsize_.*\.zip$
