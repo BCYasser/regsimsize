@@ -25,12 +25,23 @@ establish prediction-model development adequacy or validate arbitrary callbacks.
 * Four optional advanced example designs each completed eight analyses.
 * Dependency versions and full logs accompany the local delivery.
 
-## Remaining checks — update before submission
+## Additional checks completed — 7 October 2026
 
-Current R-devel was not installed in the local environment; current R-release
-was used. Current R-devel, Windows and macOS checks remain to be recorded.
-The included GitHub Actions workflow has not yet run for this version.
-Replace this pending section with the actual additional check results.
+R CMD check --as-cran completed successfully on:
+
+* Windows: R 4.6.1
+* macOS: R 4.6.1
+* Ubuntu Linux: R 4.6.1
+* Ubuntu Linux: R-devel (2026-10-06 r90643)
+
+All four environments returned:
+0 errors, 0 warnings, 1 NOTE.
+
+The only NOTE was "New submission", which is expected for
+this package's first CRAN submission.
+
+Workflow results:
+https://github.com/BCYasser/regsimsize/actions/runs/37683602888
 
 ## Additional information
 
